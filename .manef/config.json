@@ -1,0 +1,8 @@
+{
+  "foundationVersion": "1.0.0",
+  "contractVersion": "1.0.0",
+  "identity": { "authority": "owning-product", "authorization": "per-call", "tenantContext": "verified-host-only" },
+  "secrets": { "transport": "references-only", "resolution": "owning-product", "diagnostics": "redacted" },
+  "execution": { "defaultMode": "preview", "launchProducts": false, "network": "explicit-adapter", "dangerousOperations": "target-authorization-required" },
+  "testing": { "fixtures": "synthetic", "nativeChecks": "retained", "liveEvidence": "separate" }
+}

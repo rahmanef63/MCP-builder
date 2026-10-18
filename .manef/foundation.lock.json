@@ -1,0 +1,12 @@
+{
+  "foundationVersion": "1.0.0",
+  "contractVersion": "1.0.0",
+  "nodeMinimum": "22.13",
+  "sourceSha256": "a5f87b8fcf62aa9068ffedf7d47c6be0effa50e2b4b3cee92d84a9edec00464e",
+  "files": {
+    "check-module.mjs": "6b1c90dc35958b3eea95905c9c66588214ae2f09867b70fa8cdca86778aa9736",
+    "module.schema.json": "388b7a0d45d49710b49c30810b47ba13b8f9fa88d92c4084ab30edcac21ec5bf",
+    "config.json": "234a1077bb8c482c55f5d02d8147090727de14409f995948346add44ace9279e",
+    "THIRD-PARTY-NOTICES.txt": "e634e96c5aa18d41401e3f345ee4b1375943ff9fe379cabb11f83d1fda83550b"
+  }
+}
