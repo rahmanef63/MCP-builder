@@ -25,9 +25,20 @@ const IPV4_BLOCKED: readonly Rule[] = [
   { label: "240.0.0.0/4", match: (o) => ((o[0] ?? 0) & 0xf0) === 0xf0 },
 ]
 
+// IANA IPv6 Special-Purpose Address Registry (2025-10-09):
+// https://www.iana.org/assignments/iana-ipv6-special-registry/
 const IPV6_BLOCKED: readonly Rule[] = [
   { label: "::/128", match: (g) => g.every((part) => part === 0) },
   { label: "::1/128", match: (g) => g.every((part, i) => (i === 7 ? part === 1 : part === 0)) },
+  { label: "64:ff9b:1::/48", match: (g) => g[0] === 0x0064 && g[1] === 0xff9b && g[2] === 1 },
+  { label: "100:0:0:1::/64", match: (g) => g[0] === 0x0100 && g[1] === 0 && g[2] === 0 && g[3] === 1 },
+  { label: "2001::/32", match: (g) => g[0] === 0x2001 && g[1] === 0 },
+  { label: "2001:2::/48", match: (g) => g[0] === 0x2001 && g[1] === 2 && g[2] === 0 },
+  { label: "2001::/23", match: (g) => g[0] === 0x2001 && ((g[1] ?? 0) & 0xfe00) === 0 && !globalProtocolAssignment(g) },
+  { label: "2002::/16", match: (g) => g[0] === 0x2002 },
+  { label: "3fff::/20", match: (g) => g[0] === 0x3fff && ((g[1] ?? 0) & 0xf000) === 0 },
+  { label: "5f00::/16", match: (g) => g[0] === 0x5f00 },
+  { label: "fec0::/10", match: (g) => ((g[0] ?? 0) & 0xffc0) === 0xfec0 },
   { label: "100::/64", match: (g) => g[0] === 0x0100 && g.slice(1, 4).every((part) => part === 0) },
   { label: "2001:db8::/32", match: (g) => g[0] === 0x2001 && g[1] === 0x0db8 },
   { label: "fc00::/7", match: (g) => ((g[0] ?? 0) & 0xfe00) === 0xfc00 },
@@ -43,7 +54,15 @@ export function blockedRange(host: string): string | null {
     const low = mappedIpv4(groups)
     const v4 = low === null ? undefined : IPV4_BLOCKED.find((rule) => rule.match(low))
     if (v4 !== undefined) return v4.label
-    return IPV6_BLOCKED.find((rule) => rule.match(groups))?.label ?? null
+    const translated = wellKnownNat64Ipv4(groups)
+    if (translated !== null) return IPV4_BLOCKED.find((rule) => rule.match(translated))?.label ?? null
+    const blocked = IPV6_BLOCKED.find((rule) => rule.match(groups))
+    if (blocked !== undefined) return blocked.label
+    const mapped = groups[5] === 0xffff && groups.slice(0, 5).every((part) => part === 0)
+    // Global unicast is currently allocated from 2000::/3. Mapped IPv4 and
+    // the well-known NAT64 prefix are handled through their IPv4 destination.
+    if (!mapped && ((groups[0] ?? 0) & 0xe000) !== 0x2000) return "outside global IPv6 unicast"
+    return null
   }
   const octets = parseIpv4(canonical)
   if (octets === null) return null
@@ -112,4 +131,19 @@ function mappedIpv4(groups: readonly number[]): readonly number[] | null {
   const high = groups[6] ?? 0
   const low = groups[7] ?? 0
   return [high >> 8, high & 0xff, low >> 8, low & 0xff]
+}
+
+function wellKnownNat64Ipv4(groups: readonly number[]): readonly number[] | null {
+  if (groups[0] !== 0x0064 || groups[1] !== 0xff9b || !groups.slice(2, 6).every((part) => part === 0)) return null
+  const high = groups[6] ?? 0
+  const low = groups[7] ?? 0
+  return [high >> 8, high & 0xff, low >> 8, low & 0xff]
+}
+
+/** Globally reachable more-specific allocations within IANA's 2001::/23. */
+function globalProtocolAssignment(groups: readonly number[]): boolean {
+  const second = groups[1] ?? 0
+  if (second === 3 || (second === 4 && groups[2] === 0x0112)) return true
+  if ((second & 0xfff0) === 0x0020 || (second & 0xfff0) === 0x0030) return true
+  return second === 1 && groups.slice(2, 7).every((part) => part === 0) && [1, 2, 3].includes(groups[7] ?? 0)
 }

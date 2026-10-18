@@ -42,6 +42,7 @@ import {
   connectable,
   fail,
   field,
+  requireViewer,
   requireViewerToken,
   storeConnection,
   type ConnectFormState,
@@ -51,8 +52,9 @@ export async function startOAuthConnect(
   _previous: ConnectFormState,
   formData: FormData,
 ): Promise<ConnectFormState> {
-  const token = await requireViewerToken()
-  if (token === null) return fail("not_signed_in")
+  const viewer = await requireViewer()
+  if (viewer === null) return fail("not_signed_in")
+  const { token, userId } = viewer
   if (!sealingAvailable()) return fail("sealing_unavailable")
 
   const target = connectable(field(formData, "connectorId"))
@@ -125,6 +127,7 @@ export async function startOAuthConnect(
     const { verifier, challenge } = await createPkce()
     const state = createState()
     await writeFlowState({
+      userId,
       connectorId: target.id,
       state,
       verifier,

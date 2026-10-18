@@ -26,6 +26,7 @@
     "@cg/protocol": "workspace:*",
     "@cg/registry": "workspace:*",
     "@cg/schemas": "workspace:*",
-    "convex": "1.44.0"
+    "convex": "1.44.0",
+    "@cg/transport": "workspace:*"
   }
 }

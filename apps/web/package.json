@@ -3,7 +3,7 @@
   "version": "0.4.0",
   "private": true,
   "description": "Control-plane dashboard: devices, connections, permissions, approvals, audit. On Vercel it also mounts the gateway edge (docs/20).",
-  "//@cg/gateway": "Dependency, not a copy: this app mounts the gateway's ./edge export on its own routes. apps/gateway/src/main.ts — the only Bun-coupled module — is deliberately not exported, so no Bun global can enter the Next build.",
+  "//@cg/gateway": "Dependency, not a copy: this app mounts the gateway's ./edge export on its own routes. apps/gateway/src/main.ts \u2014 the only Bun-coupled module \u2014 is deliberately not exported, so no Bun global can enter the Next build.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -28,7 +28,8 @@
     "next": "16.3.1",
     "next-themes": "0.4.6",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "@cg/transport": "workspace:*"
   },
   "devDependencies": {
     "@edge-runtime/vm": "5.0.0",

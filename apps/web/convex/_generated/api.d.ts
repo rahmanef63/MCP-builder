@@ -34,6 +34,7 @@ import type * as features_api_keys_queries from "../features/api_keys/queries.js
 import type * as features_approvals_mutations from "../features/approvals/mutations.js";
 import type * as features_approvals_queries from "../features/approvals/queries.js";
 import type * as features_audit_queries from "../features/audit/queries.js";
+import type * as features_auth_identity from "../features/auth/identity.js";
 import type * as features_auth_queries from "../features/auth/queries.js";
 import type * as features_connections_mutations from "../features/connections/mutations.js";
 import type * as features_connections_queries from "../features/connections/queries.js";
@@ -93,6 +94,7 @@ declare const fullApi: ApiFromModules<{
   "features/approvals/mutations": typeof features_approvals_mutations;
   "features/approvals/queries": typeof features_approvals_queries;
   "features/audit/queries": typeof features_audit_queries;
+  "features/auth/identity": typeof features_auth_identity;
   "features/auth/queries": typeof features_auth_queries;
   "features/connections/mutations": typeof features_connections_mutations;
   "features/connections/queries": typeof features_connections_queries;

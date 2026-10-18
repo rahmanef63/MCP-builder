@@ -8,16 +8,25 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 
 import {
   authorizeUrl,
-  clientCredentialsGrant,
+  clientCredentialsGrant as actualClientCredentialsGrant,
   createPkce,
   createState,
-  exchangeCode,
-  registerClient,
+  exchangeCode as actualExchangeCode,
+  registerClient as actualRegisterClient,
   tokenExpiresAt,
   OAuthExchangeError,
 } from "../client"
-import { discoverAuthServer, DiscoveryError } from "../discovery"
+import { discoverAuthServer as actualDiscoverAuthServer, DiscoveryError } from "../discovery"
 import { parseFlowState, type OAuthFlowState } from "../state"
+
+const exchangeCode = (params: Parameters<typeof actualExchangeCode>[0]) =>
+  actualExchangeCode(params, { fetcher: fetch })
+const clientCredentialsGrant = (params: Parameters<typeof actualClientCredentialsGrant>[0]) =>
+  actualClientCredentialsGrant(params, { fetcher: fetch })
+const registerClient = (endpoint: string, redirectUri: string, clientName: string) =>
+  actualRegisterClient(endpoint, redirectUri, clientName, { fetcher: fetch })
+const discoverAuthServer = (resource: string) =>
+  actualDiscoverAuthServer(resource, { fetcher: fetch })
 
 const RESOURCE = "https://example-mcp.convex.site/mcp"
 const ISSUER = "https://example-mcp.convex.site"
@@ -364,6 +373,7 @@ describe("dynamic client registration", () => {
 describe("flow state", () => {
   const flow: OAuthFlowState = {
     v: 1,
+    userId: "user_a",
     connectorId: "careerpack",
     state: "state_1",
     verifier: "verifier_1",
@@ -378,6 +388,15 @@ describe("flow state", () => {
 
   test("round-trips", () => {
     expect(parseFlowState(JSON.stringify(flow), 1_000_000)).toEqual(flow)
+  })
+
+  test("DENIED: an old cookie without an owner cannot be attached to the current account", () => {
+    const { userId: _legacyOwner, ...legacy } = flow
+    expect(parseFlowState(JSON.stringify(legacy), 1_000_000)).toBeNull()
+  })
+
+  test.each(["", null, 7, {}, []])("DENIED: malformed owner id %j", (userId) => {
+    expect(parseFlowState(JSON.stringify({ ...flow, userId }), 1_000_000)).toBeNull()
   })
 
   test("DENIED: expired", () => {

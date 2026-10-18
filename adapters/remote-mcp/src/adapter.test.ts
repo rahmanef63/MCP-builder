@@ -1,8 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import type { FetchLike } from "@cg/transport"
 import { GatewayError } from "@cg/core"
 import type { ConnectorManifest } from "@cg/core"
 import type { CloudAdapterContext } from "@cg/sdk"
-import { createRemoteMcpAdapter } from "./adapter"
+import { createRemoteMcpAdapter as createAdapter } from "./adapter"
+
+function createRemoteMcpAdapter(manifest: ConnectorManifest) {
+  return createAdapter(manifest, { fetcher: (input, init) => fixtureFetch(input, init) })
+}
 
 /**
  * Deliberately NOT the CareerPack manifest. The adapter is the generic type; if this file
@@ -48,12 +53,12 @@ const adapter = createRemoteMcpAdapter(fixtureManifest())
 const TOKEN = "cp_live_9c2f4a1b7e6d8f3a5b0c1d2e3f4a5b6c"
 const BASE_URL = "https://upstream.example.com/mcp"
 
-const originalFetch = globalThis.fetch
+let fixtureFetch: FetchLike = async () => { throw new Error("No fetch fixture configured.") }
 type StubCall = { url: string; init: RequestInit }
 let calls: StubCall[] = []
 
 function stubFetch(body: string, options: { status?: number; contentType?: string } = {}): void {
-  globalThis.fetch = ((input: unknown, init?: RequestInit) => {
+  fixtureFetch = ((input: unknown, init?: RequestInit) => {
     calls.push({ url: String(input), init: init ?? {} })
     const request = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>
     if (request["method"] === "initialize") {
@@ -65,7 +70,7 @@ function stubFetch(body: string, options: { status?: number; contentType?: strin
       status: options.status ?? 200,
       headers: { "content-type": options.contentType ?? "application/json" },
     }))
-  }) as unknown as typeof fetch
+  }) as FetchLike
 }
 
 function rpc(result: unknown): string {
@@ -85,7 +90,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  globalThis.fetch = originalFetch
+  fixtureFetch = async () => { throw new Error("No fetch fixture configured.") }
 })
 
 describe("createRemoteMcpAdapter construction", () => {
@@ -364,7 +369,7 @@ describe("the bearer token never leaks", () => {
 describe("remote-mcp transient retry policy", () => {
   test("read-only action retries one transient transport failure", async () => {
     let toolAttempts = 0
-    globalThis.fetch = ((input: unknown, init?: RequestInit) => {
+    fixtureFetch = ((input: unknown, init?: RequestInit) => {
       calls.push({ url: String(input), init: init ?? {} })
       const request = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>
       if (request["method"] === "initialize") return Promise.resolve(new Response(JSON.stringify({ jsonrpc: "2.0", id: request["id"], result: { protocolVersion: "2025-06-18", capabilities: {} } }), { headers: { "content-type": "application/json" } }))
@@ -372,21 +377,21 @@ describe("remote-mcp transient retry policy", () => {
       toolAttempts += 1
       if (toolAttempts === 1) return Promise.reject(new Error("temporary network failure"))
       return Promise.resolve(new Response(JSON.stringify({ jsonrpc: "2.0", id: request["id"], result: { structuredContent: { ok: true } } }), { headers: { "content-type": "application/json" } }))
-    }) as unknown as typeof fetch
+    }) as FetchLike
     await expect(adapter.execute(READ, {}, context())).resolves.toEqual({ output: { ok: true } })
     expect(toolAttempts).toBe(2)
   })
 
   test("non-idempotent write is never replayed after an ambiguous transport failure", async () => {
     let toolAttempts = 0
-    globalThis.fetch = ((input: unknown, init?: RequestInit) => {
+    fixtureFetch = ((input: unknown, init?: RequestInit) => {
       calls.push({ url: String(input), init: init ?? {} })
       const request = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>
       if (request["method"] === "initialize") return Promise.resolve(new Response(JSON.stringify({ jsonrpc: "2.0", id: request["id"], result: { protocolVersion: "2025-06-18", capabilities: {} } }), { headers: { "content-type": "application/json" } }))
       if (request["method"] === "notifications/initialized") return Promise.resolve(new Response(null, { status: 202 }))
       toolAttempts += 1
       return Promise.reject(new Error("connection reset after send"))
-    }) as unknown as typeof fetch
+    }) as FetchLike
     const error = await adapter.execute(WRITE, { company: "Acme" }, context()).catch((cause: unknown) => cause)
     expect((error as GatewayError).code).toBe("UPSTREAM_ERROR")
     expect(toolAttempts).toBe(1)

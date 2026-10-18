@@ -154,3 +154,42 @@ test("an omitted refresh scope preserves the originally-authorized scope", async
   })
   expect(result.renewal.scope).toBe("read write")
 })
+
+describe("renewal endpoint policy boundary", () => {
+  test.each([
+    "http://auth.example.test/oauth/token",
+    "https://auth.example.test:8080/oauth/token",
+    "https://user:fixture-secret@auth.example.test/oauth/token",
+    "https://localhost/oauth/token",
+    "https://bridge.localhost/oauth/token",
+    "https://printer.local/oauth/token",
+    "https://singlelabel/oauth/token",
+    "https://169.254.169.254/oauth/token",
+    "https://[::ffff:127.0.0.1]/oauth/token",
+    "https://auth.example.test/oauth/token#fragment",
+    "https://connect.rahmanef.com/oauth/token",
+  ])("rejects %s before forwarding the renewal credential", async (tokenEndpoint) => {
+    let calls = 0
+    await expect(refreshOAuthToken({ ...refresh, tokenEndpoint }, {
+      fetcher: async () => {
+        calls += 1
+        return response({ access_token: "unexpected" })
+      },
+    })).rejects.toMatchObject({ code: "invalid_endpoint", permanent: true })
+    expect(calls).toBe(0)
+  })
+
+  test("retains reviewed alternate TLS port and endpoint query semantics", async () => {
+    let received = ""
+    await refreshOAuthToken({
+      ...refresh,
+      tokenEndpoint: "https://AUTH.EXAMPLE.TEST.:8443/oauth/token?tenant=fixture",
+    }, {
+      fetcher: async (input) => {
+        received = String(input)
+        return response({ access_token: "fixture-access" })
+      },
+    })
+    expect(received).toBe("https://auth.example.test:8443/oauth/token?tenant=fixture")
+  })
+})

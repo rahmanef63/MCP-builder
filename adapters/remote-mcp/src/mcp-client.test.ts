@@ -1,23 +1,29 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import type { FetchLike } from "@cg/transport"
 import { GatewayError } from "@cg/core"
 import {
   MAX_LARGE_RESPONSE_BYTES,
   MAX_RESPONSE_BYTES,
   MCP_PROTOCOL_VERSION,
-  callTool,
+  callTool as invokeTool,
 } from "./mcp-client"
+
+function callTool(...args: Parameters<typeof invokeTool>): ReturnType<typeof invokeTool> {
+  args[7] = { fetcher: (input, init) => fixtureFetch(input, init) }
+  return invokeTool(...args)
+}
 
 const TOKEN = "cp_live_9c2f4a1b7e6d8f3a5b0c1d2e3f4a5b6c"
 const BASE_URL = "https://upstream.example.com/mcp"
 
-const originalFetch = globalThis.fetch
+let fixtureFetch: FetchLike = async () => { throw new Error("No fetch fixture configured.") }
 let calls: { url: string; init: RequestInit }[] = []
 
 function stubFetch(
   body: string,
   options: { status?: number; contentType?: string; headers?: Record<string, string> } = {},
 ): void {
-  globalThis.fetch = ((input: unknown, init?: RequestInit) => {
+  fixtureFetch = ((input: unknown, init?: RequestInit) => {
     calls.push({ url: String(input), init: init ?? {} })
     let method = ""
     try { method = (JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>)["method"] as string ?? "" } catch {}
@@ -32,11 +38,11 @@ function stubFetch(
       status: options.status ?? 200,
       headers: { "content-type": options.contentType ?? "application/json", ...options.headers },
     }))
-  }) as unknown as typeof fetch
+  }) as FetchLike
 }
 
 function stubReject(error: Error): void {
-  globalThis.fetch = (() => Promise.reject(error)) as unknown as typeof fetch
+  fixtureFetch = (() => Promise.reject(error)) as FetchLike
 }
 
 function rpc(result: unknown): string {
@@ -52,7 +58,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  globalThis.fetch = originalFetch
+  fixtureFetch = async () => { throw new Error("No fetch fixture configured.") }
 })
 
 describe("callTool transport", () => {
@@ -83,13 +89,27 @@ describe("callTool transport", () => {
   test("allows a loopback plaintext endpoint for local development", async () => {
     stubFetch(rpc({ structuredContent: { ok: true } }))
 
-    await expect(call("http://127.0.0.1:8787/mcp")).resolves.toEqual({ ok: true })
+    const original = process.env.ALLOW_LOOPBACK_UPSTREAM
+    process.env.ALLOW_LOOPBACK_UPSTREAM = "1"
+    try {
+      await expect(call("http://127.0.0.1:8787/mcp")).resolves.toEqual({ ok: true })
+    } finally {
+      if (original === undefined) delete process.env.ALLOW_LOOPBACK_UPSTREAM
+      else process.env.ALLOW_LOOPBACK_UPSTREAM = original
+    }
   })
 
   test("allows RFC localhost subdomains only as loopback development endpoints", async () => {
     stubFetch(rpc({ structuredContent: { ok: true } }))
 
-    await expect(call("http://bridge.localhost:8787/mcp")).resolves.toEqual({ ok: true })
+    const original = process.env.ALLOW_LOOPBACK_UPSTREAM
+    process.env.ALLOW_LOOPBACK_UPSTREAM = "1"
+    try {
+      await expect(call("http://bridge.localhost:8787/mcp")).resolves.toEqual({ ok: true })
+    } finally {
+      if (original === undefined) delete process.env.ALLOW_LOOPBACK_UPSTREAM
+      else process.env.ALLOW_LOOPBACK_UPSTREAM = original
+    }
   })
 
   for (const endpoint of [
@@ -107,7 +127,7 @@ describe("callTool transport", () => {
       stubFetch(rpc({ structuredContent: {} }))
       const error = await call(endpoint).catch((cause: unknown) => cause)
       expect((error as GatewayError).code).toBe("UPSTREAM_ERROR")
-      expect((error as GatewayError).message).toContain("non-global")
+      expect((error as GatewayError).message).toContain("not allowed")
       expect(calls).toHaveLength(0)
     })
   }
@@ -227,13 +247,13 @@ describe("callTool caps the response body", () => {
         controller.enqueue(new Uint8Array(64 * 1024).fill(120))
       },
     })
-    globalThis.fetch = ((input: unknown, init?: RequestInit) => {
+    fixtureFetch = ((input: unknown, init?: RequestInit) => {
       calls.push({ url: String(input), init: init ?? {} })
       const payload = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>
       if (payload["method"] === "initialize") return Promise.resolve(new Response(JSON.stringify({ jsonrpc: "2.0", id: payload["id"], result: { protocolVersion: MCP_PROTOCOL_VERSION, capabilities: {} } }), { headers: { "content-type": "application/json" } }))
       if (payload["method"] === "notifications/initialized") return Promise.resolve(new Response(null, { status: 202 }))
       return Promise.resolve(new Response(endless, { headers: { "content-type": "application/json" } }))
-    }) as unknown as typeof fetch
+    }) as FetchLike
 
     const error = await call().catch((cause: unknown) => cause)
 
@@ -337,7 +357,7 @@ describe("callTool response parsing", () => {
 
 describe("Streamable HTTP session lifecycle", () => {
   test("initialize session id is propagated to initialized notification and tools/call", async () => {
-    globalThis.fetch = ((input: unknown, init?: RequestInit) => {
+    fixtureFetch = ((input: unknown, init?: RequestInit) => {
       calls.push({ url: String(input), init: init ?? {} })
       const payload = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>
       if (payload["method"] === "initialize") {
@@ -347,7 +367,7 @@ describe("Streamable HTTP session lifecycle", () => {
       }
       if (payload["method"] === "notifications/initialized") return Promise.resolve(new Response(null, { status: 202 }))
       return Promise.resolve(new Response(JSON.stringify({ jsonrpc: "2.0", id: payload["id"], result: { structuredContent: { ok: true } } }), { headers: { "content-type": "application/json" } }))
-    }) as unknown as typeof fetch
+    }) as FetchLike
 
     await expect(call()).resolves.toEqual({ ok: true })
     expect(calls).toHaveLength(3)
@@ -358,12 +378,12 @@ describe("Streamable HTTP session lifecycle", () => {
   })
 
   test("legacy server with method-not-found falls back to direct tools/call", async () => {
-    globalThis.fetch = ((input: unknown, init?: RequestInit) => {
+    fixtureFetch = ((input: unknown, init?: RequestInit) => {
       calls.push({ url: String(input), init: init ?? {} })
       const payload = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>
       if (payload["method"] === "initialize") return Promise.resolve(new Response(JSON.stringify({ jsonrpc: "2.0", id: payload["id"], error: { code: -32601, message: "method not found" } }), { headers: { "content-type": "application/json" } }))
       return Promise.resolve(new Response(JSON.stringify({ jsonrpc: "2.0", id: payload["id"], result: { structuredContent: { legacy: true } } }), { headers: { "content-type": "application/json" } }))
-    }) as unknown as typeof fetch
+    }) as FetchLike
 
     await expect(call()).resolves.toEqual({ legacy: true })
     expect(calls).toHaveLength(2)
@@ -372,18 +392,18 @@ describe("Streamable HTTP session lifecycle", () => {
 
   test("invalid session identifiers fail closed and are never echoed", async () => {
     const bad = "bad session id"
-    globalThis.fetch = ((input: unknown, init?: RequestInit) => {
+    fixtureFetch = ((input: unknown, init?: RequestInit) => {
       calls.push({ url: String(input), init: init ?? {} })
       const payload = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>
       return Promise.resolve(new Response(JSON.stringify({ jsonrpc: "2.0", id: payload["id"], result: { protocolVersion: MCP_PROTOCOL_VERSION, capabilities: {} } }), { headers: { "content-type": "application/json", "mcp-session-id": bad } }))
-    }) as unknown as typeof fetch
+    }) as FetchLike
     const error = await call().catch((cause: unknown) => cause)
     expect((error as GatewayError).code).toBe("UPSTREAM_ERROR")
     expect((error as GatewayError).message).not.toContain(bad)
   })
 
   test("SSE ignores progress/notification events and selects the matching JSON-RPC id", async () => {
-    globalThis.fetch = ((input: unknown, init?: RequestInit) => {
+    fixtureFetch = ((input: unknown, init?: RequestInit) => {
       calls.push({ url: String(input), init: init ?? {} })
       const payload = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>
       if (payload["method"] === "initialize") return Promise.resolve(new Response(JSON.stringify({ jsonrpc: "2.0", id: payload["id"], result: { protocolVersion: MCP_PROTOCOL_VERSION, capabilities: {} } }), { headers: { "content-type": "application/json" } }))
@@ -391,7 +411,7 @@ describe("Streamable HTTP session lifecycle", () => {
       const wanted = JSON.stringify({ jsonrpc: "2.0", id: payload["id"], result: { structuredContent: { done: true } } })
       const stream = `event: message\ndata: {"jsonrpc":"2.0","method":"notifications/progress","params":{"progress":1}}\n\nevent: message\ndata: ${wanted}\n\nevent: message\ndata: {"jsonrpc":"2.0","method":"notifications/progress","params":{"progress":2}}\n\n`
       return Promise.resolve(new Response(stream, { headers: { "content-type": "text/event-stream" } }))
-    }) as unknown as typeof fetch
+    }) as FetchLike
     await expect(call()).resolves.toEqual({ done: true })
   })
 })

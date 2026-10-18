@@ -1,7 +1,9 @@
 // @vitest-environment node
 import { afterEach, describe, expect, test, vi } from "vitest"
 
-import { discoverAuthServer, DiscoveryError } from "./discovery"
+import { discoverAuthServer as discoverWithTransport, DiscoveryError } from "./discovery"
+
+const discoverAuthServer = (resource: string) => discoverWithTransport(resource, { fetcher: fetch })
 
 const RESOURCE = "https://resource.example.com/mcp"
 const ISSUER = "https://auth.example.com"

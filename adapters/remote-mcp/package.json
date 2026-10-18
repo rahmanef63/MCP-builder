@@ -12,6 +12,7 @@
   "dependencies": {
     "@cg/core": "workspace:*",
     "@cg/schemas": "workspace:*",
-    "@cg/sdk": "workspace:*"
+    "@cg/sdk": "workspace:*",
+    "@cg/transport": "workspace:*"
   }
 }

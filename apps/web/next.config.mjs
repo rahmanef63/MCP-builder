@@ -19,6 +19,7 @@ const nextConfig = {
   // Workspace packages ship TypeScript source, no build step.
   transpilePackages: [
     "@cg/core",
+    "@cg/transport",
     // Server-side sealing of connection credentials (lib/credentials.ts).
     "@cg/auth",
     "@cg/adapter-remote-mcp",

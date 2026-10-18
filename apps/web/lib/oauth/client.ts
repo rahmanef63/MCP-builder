@@ -6,7 +6,11 @@
  * connection record. The browser never sees either token; the gateway later
  * renews an expiring credential under a control-plane lease.
  */
+import { safeFetch, type FetchLike } from "@cg/transport"
 import { toBase64Url } from "@cg/auth"
+import { assertUpstreamEndpointUrl } from "@convex/_shared/upstream_url"
+
+export type OAuthHttpOptions = { readonly fetcher?: FetchLike }
 
 const TIMEOUT_MS = 10_000
 const MAX_BYTES = 32 * 1024
@@ -22,10 +26,17 @@ async function postJson(
   url: string,
   body: string,
   contentType: string,
+  options: OAuthHttpOptions,
 ): Promise<Record<string, unknown>> {
+  let endpoint: string
+  try {
+    endpoint = assertUpstreamEndpointUrl(url)
+  } catch {
+    throw new OAuthExchangeError("invalid_endpoint")
+  }
   let response: Response
   try {
-    response = await fetch(url, {
+    response = await (options.fetcher ?? safeFetch)(endpoint, {
       method: "POST",
       headers: { "content-type": contentType, accept: "application/json" },
       body,
@@ -109,6 +120,7 @@ export async function registerClient(
   registrationEndpoint: string,
   redirectUri: string,
   clientName: string,
+  options: OAuthHttpOptions = {},
 ): Promise<RegisteredClient> {
   const document = await postJson(
     registrationEndpoint,
@@ -120,6 +132,7 @@ export async function registerClient(
       token_endpoint_auth_method: "none",
     }),
     "application/json",
+    options,
   )
   const clientId = document["client_id"]
   if (typeof clientId !== "string" || clientId.length === 0) {
@@ -202,6 +215,7 @@ export type ClientCredentialsParams = {
  */
 export async function clientCredentialsGrant(
   params: ClientCredentialsParams,
+  options: OAuthHttpOptions = {},
 ): Promise<TokenResponse> {
   const body = new URLSearchParams({
     grant_type: "client_credentials",
@@ -215,6 +229,7 @@ export async function clientCredentialsGrant(
     params.tokenEndpoint,
     body.toString(),
     "application/x-www-form-urlencoded",
+    options,
   )
   return readToken(document)
 }
@@ -243,7 +258,7 @@ export function tokenExpiresAt(response: TokenResponse, now = Date.now()): numbe
   return Number.isFinite(value) && value > now ? value : null
 }
 
-export async function exchangeCode(params: ExchangeParams): Promise<TokenResponse> {
+export async function exchangeCode(params: ExchangeParams, options: OAuthHttpOptions = {}): Promise<TokenResponse> {
   const body = new URLSearchParams({
     grant_type: "authorization_code",
     code: params.code,
@@ -260,6 +275,7 @@ export async function exchangeCode(params: ExchangeParams): Promise<TokenRespons
     params.tokenEndpoint,
     body.toString(),
     "application/x-www-form-urlencoded",
+    options,
   )
   return readToken(document)
 }
