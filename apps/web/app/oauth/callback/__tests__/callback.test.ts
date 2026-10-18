@@ -13,7 +13,7 @@
  */
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 
-import { open } from "@cg/auth"
+import { open, seal } from "@cg/auth"
 import { parseOAuthRenewal } from "@cg/core"
 
 const KEY = Buffer.alloc(32, 7).toString("base64")
@@ -22,7 +22,12 @@ const RESOURCE = "https://proficient-dove-151.convex.site/mcp"
 const REDIRECT = "https://connectors.example.com/oauth/callback"
 
 const cookieJar = new Map<string, string>()
-const mutations: { args: Record<string, unknown> }[] = []
+const mutations: { args: Record<string, unknown>; token?: string }[] = []
+const identityQueries: { token?: string }[] = []
+const boundaryCalls: string[] = []
+let currentUserId: unknown = "user_a"
+let identityError: Error | null = null
+let sessionToken: string | undefined = "session-token"
 
 vi.mock("next/headers", () => ({
   cookies: async () => ({
@@ -37,21 +42,37 @@ vi.mock("next/headers", () => ({
 }))
 
 vi.mock("convex/nextjs", () => ({
-  fetchMutation: async (_reference: unknown, args: Record<string, unknown>) => {
-    mutations.push({ args })
+  fetchMutation: async (_reference: unknown, args: Record<string, unknown>, options?: { token?: string }) => {
+    boundaryCalls.push("store")
+    mutations.push({ args, token: options?.token })
     return { connectionId: "conn_1" }
   },
-  fetchQuery: async () => ({ email: "owner@example.com" }),
+  fetchQuery: async (_reference: unknown, _args: unknown, options?: { token?: string }) => {
+    boundaryCalls.push("identity")
+    identityQueries.push(options ?? {})
+    if (identityError !== null) throw identityError
+    return currentUserId
+  },
 }))
 
 vi.mock("@convex-dev/auth/nextjs/server", () => ({
-  convexAuthNextjsToken: async () => "session-token",
+  convexAuthNextjsToken: async () => sessionToken,
 }))
 
+vi.mock("@/lib/oauth/client", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/oauth/client")>()
+  return {
+    ...actual,
+    exchangeCode: (params: Parameters<typeof actual.exchangeCode>[0]) =>
+      actual.exchangeCode(params, { fetcher: fetch }),
+  }
+})
+
 const { GET } = await import("../route")
-const { writeFlowState } = await import("@/lib/oauth/state")
+const { writeFlowState, OAUTH_STATE_COOKIE } = await import("@/lib/oauth/state")
 
 const FLOW = {
+  userId: "user_a",
   connectorId: "careerpack",
   state: "state_1",
   verifier: "verifier_1",
@@ -71,15 +92,17 @@ function tokenServer(token = "cp_live_token"): void {
   vi.stubGlobal(
     "fetch",
     vi.fn(
-      async () =>
-        new Response(
+      async () => {
+        boundaryCalls.push("exchange")
+        return new Response(
           JSON.stringify({
             access_token: token,
             expires_in: 3_600,
             refresh_token: "cp_refresh_token",
           }),
           { status: 200 },
-        ),
+        )
+      },
     ),
   )
 }
@@ -88,6 +111,11 @@ beforeEach(() => {
   vi.stubEnv("CREDENTIAL_ENCRYPTION_KEY", KEY)
   cookieJar.clear()
   mutations.length = 0
+  identityQueries.length = 0
+  boundaryCalls.length = 0
+  currentUserId = "user_a"
+  identityError = null
+  sessionToken = "session-token"
 })
 
 afterEach(() => {
@@ -180,5 +208,95 @@ describe("oauth callback", () => {
     const response = await GET(callback("code=abc&state=state_1"))
     expect(response.headers.get("location")).toContain("connect_error=flow_expired")
     expect(mutations).toHaveLength(0)
+  })
+})
+
+describe("oauth callback owner binding", () => {
+  test("switching dashboard accounts refuses the code before exchange or storage", async () => {
+    await writeFlowState(FLOW)
+    currentUserId = "user_b"
+    sessionToken = "session-for-user-b"
+    tokenServer()
+
+    const response = await GET(callback("code=abc&state=state_1"))
+
+    expect(response.headers.get("location")).toContain("connect_error=state_mismatch")
+    expect(identityQueries).toEqual([{ token: "session-for-user-b" }])
+    expect(fetch).not.toHaveBeenCalled()
+    expect(mutations).toHaveLength(0)
+    expect(cookieJar.has(OAUTH_STATE_COOKIE)).toBe(false)
+    expect(boundaryCalls).toEqual(["identity"])
+  })
+
+  test("the same user may finish with a refreshed dashboard session", async () => {
+    await writeFlowState(FLOW)
+    sessionToken = "refreshed-session-for-user-a"
+    tokenServer()
+
+    const response = await GET(callback("code=abc&state=state_1"))
+
+    expect(response.headers.get("location")).toContain("connected=careerpack")
+    expect(identityQueries).toEqual([{ token: "refreshed-session-for-user-a" }])
+    expect(mutations).toHaveLength(1)
+    expect(mutations[0]?.token).toBe("refreshed-session-for-user-a")
+    expect(boundaryCalls).toEqual(["identity", "exchange", "store"])
+    expect(await open(String(mutations[0]?.args.tokenCipher), KEY)).toBe("cp_live_token")
+  })
+
+  test.each([null, undefined, "", { email: "owner@example.com" }])(
+    "an unusable identity result fails closed before exchange: %j", async (identity) => {
+      await writeFlowState(FLOW)
+      currentUserId = identity
+      tokenServer()
+
+      const response = await GET(callback("code=abc&state=state_1"))
+
+      expect(response.headers.get("location")).toContain("connect_error=not_signed_in")
+      expect(fetch).not.toHaveBeenCalled()
+      expect(mutations).toHaveLength(0)
+      expect(cookieJar.has(OAUTH_STATE_COOKIE)).toBe(false)
+    },
+  )
+
+  test("an identity query failure fails closed without redeeming the code", async () => {
+    await writeFlowState(FLOW)
+    identityError = new Error("fixture identity unavailable")
+    tokenServer()
+
+    const response = await GET(callback("code=abc&state=state_1"))
+
+    expect(response.headers.get("location")).toContain("connect_error=not_signed_in")
+    expect(fetch).not.toHaveBeenCalled()
+    expect(mutations).toHaveLength(0)
+    expect(cookieJar.has(OAUTH_STATE_COOKIE)).toBe(false)
+  })
+
+  test.each([undefined, ""])("a missing dashboard session refuses the code: %j", async (token) => {
+    await writeFlowState(FLOW)
+    sessionToken = token
+    tokenServer()
+
+    const response = await GET(callback("code=abc&state=state_1"))
+
+    expect(response.headers.get("location")).toContain("connect_error=not_signed_in")
+    expect(identityQueries).toHaveLength(0)
+    expect(fetch).not.toHaveBeenCalled()
+    expect(mutations).toHaveLength(0)
+  })
+
+  test("a validly sealed pre-owner-binding cookie is rejected before identity lookup or exchange", async () => {
+    const { userId: _legacyOwner, ...legacy } = FLOW
+    cookieJar.set(OAUTH_STATE_COOKIE, await seal(JSON.stringify({
+      v: 1, ...legacy, exp: Math.floor(Date.now() / 1000) + 600,
+    }), KEY))
+    tokenServer()
+
+    const response = await GET(callback("code=abc&state=state_1"))
+
+    expect(response.headers.get("location")).toContain("connect_error=flow_expired")
+    expect(identityQueries).toHaveLength(0)
+    expect(fetch).not.toHaveBeenCalled()
+    expect(mutations).toHaveLength(0)
+    expect(cookieJar.has(OAUTH_STATE_COOKIE)).toBe(false)
   })
 })

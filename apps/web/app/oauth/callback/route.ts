@@ -12,9 +12,9 @@
 import { NextResponse } from "next/server"
 import { encodeOAuthRenewal } from "@cg/core"
 import { fetchMutation } from "convex/nextjs"
-import { convexAuthNextjsToken } from "@convex-dev/auth/nextjs/server"
 
 import { api } from "@convex/_generated/api"
+import { requireViewer } from "@/app/(app)/connections/connect-support"
 import { manifestFor } from "@/lib/catalog"
 import { sealCredential } from "@/lib/credentials"
 import { exchangeCode, tokenExpiresAt } from "@/lib/oauth/client"
@@ -56,8 +56,10 @@ export async function GET(request: Request): Promise<NextResponse> {
     return failed(request, "unknown_connector")
   }
 
-  const token = await convexAuthNextjsToken()
-  if (token === undefined || token.length === 0) return failed(request, "not_signed_in")
+  const viewer = await requireViewer()
+  if (viewer === null) return failed(request, "not_signed_in")
+  if (viewer.userId !== flow.userId) return failed(request, "state_mismatch")
+  const { token } = viewer
 
   try {
     const issued = await exchangeCode({

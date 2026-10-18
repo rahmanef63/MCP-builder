@@ -25,6 +25,8 @@ const TTL_SECONDS = 600
 
 export type OAuthFlowState = {
   readonly v: 1
+  /** Convex user who initiated this flow; sessions may refresh during consent. */
+  readonly userId: string
   readonly connectorId: string
   readonly state: string
   readonly verifier: string
@@ -89,7 +91,7 @@ export function parseFlowState(json: string, nowMs: number): OAuthFlowState | nu
   if (record["v"] !== 1) return null
   if (typeof record["exp"] !== "number" || record["exp"] * 1000 < nowMs) return null
 
-  for (const key of ["connectorId", "state", "verifier", "clientId", "tokenEndpoint", "redirectUri", "resource"]) {
+  for (const key of ["userId", "connectorId", "state", "verifier", "clientId", "tokenEndpoint", "redirectUri", "resource"]) {
     if (typeof record[key] !== "string" || (record[key] as string).length === 0) return null
   }
   const secret = record["clientSecret"]

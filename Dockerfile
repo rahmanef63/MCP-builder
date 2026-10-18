@@ -1,6 +1,6 @@
 # Dashboard image (apps/web). Dokploy builds this one from the repo root.
 # The gateway has its own image at apps/gateway/Dockerfile.
-FROM oven/bun:1.3.14-alpine AS builder
+FROM oven/bun:1.4.2-alpine AS builder
 WORKDIR /app
 
 # ponytail: whole-tree copy before install. A per-package.json copy would cache

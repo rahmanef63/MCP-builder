@@ -23,16 +23,26 @@ export type ConnectFormState = {
 
 export const fail = (error: ConnectErrorCode): ConnectFormState => ({ error })
 
+export type Viewer = {
+  readonly token: string
+  readonly userId: string
+}
+
 /** The caller's identity, proven by Convex rather than assumed from a cookie. */
-export async function requireViewerToken(): Promise<string | null> {
-  const token = await convexAuthNextjsToken()
-  if (token === undefined || token.length === 0) return null
+export async function requireViewer(): Promise<Viewer | null> {
   try {
-    await fetchQuery(api.features.auth.queries.viewer, {}, { token })
-    return token
+    const token = await convexAuthNextjsToken()
+    if (typeof token !== "string" || token.length === 0) return null
+    const userId = await fetchQuery(api.features.auth.identity.currentUserId, {}, { token })
+    if (typeof userId !== "string" || userId.length === 0) return null
+    return { token, userId }
   } catch {
     return null
   }
+}
+
+export async function requireViewerToken(): Promise<string | null> {
+  return (await requireViewer())?.token ?? null
 }
 
 export function field(formData: FormData, name: string): string {

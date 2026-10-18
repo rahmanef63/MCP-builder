@@ -10,6 +10,7 @@
  * It sends only an unauthenticated MCP initialize probe. Redirects are never followed,
  * response bodies are bounded, and no connection credential is read or transmitted.
  */
+import { safeFetch, type FetchLike } from "@cg/transport"
 import type {
   ConnectorEndpointVerification,
   ConnectorManifest,
@@ -20,10 +21,6 @@ const METADATA_LIMIT_BYTES = 65_536
 const REQUEST_TIMEOUT_MS = 10_000
 const PROTOCOL_VERSION = "2025-06-18"
 
-type FetchLike = (
-  input: string | URL | Request,
-  init?: RequestInit,
-) => Promise<Response>
 type JsonRecord = Record<string, unknown>
 
 export type EndpointVerificationResult = {
@@ -36,7 +33,7 @@ export type EndpointVerificationResult = {
 
 export async function verifyRemoteEndpoints(
   manifests: readonly ConnectorManifest[] = REMOTE_MCP_MANIFESTS,
-  fetcher: FetchLike = fetch,
+  fetcher: FetchLike = safeFetch,
 ): Promise<EndpointVerificationResult[]> {
   const results: EndpointVerificationResult[] = []
   for (const manifest of manifests) {
@@ -51,7 +48,7 @@ export async function verifyRemoteEndpoints(
 
 export async function verifyRemoteEndpoint(
   manifest: ConnectorManifest,
-  fetcher: FetchLike = fetch,
+  fetcher: FetchLike = safeFetch,
 ): Promise<EndpointVerificationResult> {
   const expected = requireExpected(manifest)
   const endpoint = productionUrl(manifest.id, manifest.endpoint, "endpoint")

@@ -13,7 +13,8 @@
  * applies to a stored base URL. Without that, "token_endpoint":
  * "http://169.254.169.254/latest/meta-data/" is a cloud-credential read.
  */
-import { assertUpstreamUrl } from "@convex/_shared/upstream_url"
+import { safeFetch, type FetchLike } from "@cg/transport"
+import { assertUpstreamUrl, assertUpstreamEndpointUrl } from "@convex/_shared/upstream_url"
 
 export type AuthServer = {
   readonly issuer: string
@@ -44,9 +45,9 @@ const TIMEOUT_MS = 8000
 /** Metadata documents are a few hundred bytes; anything huge is not one. */
 const MAX_BYTES = 64 * 1024
 
-async function getJson(url: string): Promise<Record<string, unknown> | null> {
+async function getJson(url: string, fetcher: FetchLike): Promise<Record<string, unknown> | null> {
   try {
-    const response = await fetch(url, {
+    const response = await fetcher(url, {
       headers: { accept: "application/json" },
       // A redirect target has not passed the upstream URL gate.
       redirect: "manual",
@@ -105,9 +106,9 @@ function wellKnownUrls(base: string, suffix: string): string[] {
   return path.length > 0 && path !== "/" ? [`${rooted}${path}`, rooted] : [rooted]
 }
 
-async function firstDocument(urls: string[]): Promise<Record<string, unknown> | null> {
+async function firstDocument(urls: string[], fetcher: FetchLike): Promise<Record<string, unknown> | null> {
   for (const url of urls) {
-    const document = await getJson(assertUpstreamUrl(url))
+    const document = await getJson(assertUpstreamEndpointUrl(url), fetcher)
     if (document !== null) return document
   }
   return null
@@ -119,10 +120,10 @@ function readString(document: Record<string, unknown>, key: string): string | nu
 }
 
 /** A metadata endpoint we are about to call, or a typed refusal. */
-function endpointOrThrow(raw: string | null, label: string): string {
+function endpointOrThrow(raw: string | null, label: string, identity = false): string {
   if (raw === null) throw new DiscoveryError(`${label} missing`)
   try {
-    return assertUpstreamUrl(raw)
+    return identity ? assertUpstreamUrl(raw) : assertUpstreamEndpointUrl(raw)
   } catch {
     throw new DiscoveryError(`${label} is not a reachable https URL`)
   }
@@ -132,20 +133,26 @@ function endpointOrThrow(raw: string | null, label: string): string {
  * `resourceUrl` is the connector's MCP endpoint — the thing a token will be
  * spent against, and the value RFC 8707 wants echoed as `resource`.
  */
-export async function discoverAuthServer(resourceUrl: string): Promise<AuthServer> {
+export type DiscoveryHttpOptions = { readonly fetcher?: FetchLike }
+
+export async function discoverAuthServer(
+  resourceUrl: string,
+  options: DiscoveryHttpOptions = {},
+): Promise<AuthServer> {
+  const fetcher = options.fetcher ?? safeFetch
   const resource = assertUpstreamUrl(resourceUrl)
 
-  const prm = await firstDocument(wellKnownUrls(resource, "oauth-protected-resource"))
+  const prm = await firstDocument(wellKnownUrls(resource, "oauth-protected-resource"), fetcher)
   if (prm === null) throw new DiscoveryError("no protected-resource metadata")
 
   const servers = prm["authorization_servers"]
   const issuerRaw = Array.isArray(servers) && typeof servers[0] === "string" ? servers[0] : null
-  const issuer = endpointOrThrow(issuerRaw, "authorization_servers")
+  const issuer = endpointOrThrow(issuerRaw, "authorization_servers", true)
 
   const asDocument = await firstDocument([
     ...wellKnownUrls(issuer, "oauth-authorization-server"),
     ...wellKnownUrls(issuer, "openid-configuration"),
-  ])
+  ], fetcher)
   if (asDocument === null) throw new DiscoveryError("no authorization-server metadata")
 
   // RFC 8414 §3.3: the issuer inside the document must be the one we asked

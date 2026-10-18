@@ -3,6 +3,7 @@ import { GatewayError, findAction } from "@cg/core"
 import type { ConnectorManifest } from "@cg/core"
 import { validateManifest } from "@cg/schemas"
 import type { CloudAdapterContext } from "@cg/sdk"
+import type { FetchLike } from "@cg/transport"
 import { createRemoteMcpAdapter } from "./adapter"
 import { REMOTE_MCP_MANIFESTS } from "./connectors"
 import { UPSTREAM_KEY, resolveUpstreamTool } from "./upstream"
@@ -184,9 +185,8 @@ describe("careerpack, as shipped data", () => {
  * manifest; this checks that the manifest is what actually gets called.
  */
 test("shipped careerpack data reaches the wire as profile_get", async () => {
-  const originalFetch = globalThis.fetch
   let sent = "{}"
-  globalThis.fetch = ((_input: unknown, init?: RequestInit) => {
+  const fetcher = ((_input: unknown, init?: RequestInit) => {
     sent = String(init?.body)
     const request = JSON.parse(sent) as Record<string, unknown>
     if (request["method"] === "initialize") {
@@ -195,19 +195,15 @@ test("shipped careerpack data reaches the wire as profile_get", async () => {
     if (request["method"] === "notifications/initialized") return Promise.resolve(new Response(null, { status: 202 }))
     const result = { structuredContent: { ok: true } }
     return Promise.resolve(new Response(JSON.stringify({ jsonrpc: "2.0", id: request["id"], result }), { headers: { "content-type": "application/json" } }))
-  }) as unknown as typeof fetch
+  }) as FetchLike
 
-  try {
-    const context: CloudAdapterContext = {
-      requestId: "req_test",
-      credential: { connectionId: "conn_test", baseUrl: "https://cp.example.com/mcp", token: "cp_live_x9" },
-      signal: new AbortController().signal,
-    }
-    const result = await createRemoteMcpAdapter(careerpack).execute(ACTION_PROFILE_READ, {}, context)
-    expect(result.output).toEqual({ ok: true })
-  } finally {
-    globalThis.fetch = originalFetch
+  const context: CloudAdapterContext = {
+    requestId: "req_test",
+    credential: { connectionId: "conn_test", baseUrl: "https://cp.example.com/mcp", token: "cp_live_x9" },
+    signal: new AbortController().signal,
   }
+  const result = await createRemoteMcpAdapter(careerpack, { fetcher }).execute(ACTION_PROFILE_READ, {}, context)
+  expect(result.output).toEqual({ ok: true })
 
   expect((JSON.parse(sent) as Record<string, Record<string, unknown>>)["params"]?.["name"]).toBe("profile_get")
 })

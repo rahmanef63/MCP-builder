@@ -80,3 +80,32 @@ The agent separates secret device credentials from non-secret device metadata wh
 - Headless Linux keeps the existing owner-only `0700` directory / `0600` file fallback because a Secret Service session is normally absent.
 - macOS and Windows currently keep that owner-only fallback. The common `security`/PowerShell CLI approaches would expose a credential in process arguments or require an interactive prompt, so the agent does not claim native protection until a direct Keychain/DPAPI binding is available.
 - Migration is write-native-first: plaintext is removed from the file only after native persistence succeeds. A config containing an OS-store reference fails closed if that store later becomes unavailable.
+
+## Public upstream connections
+
+The dashboard and gateway use `@cg/transport` for remote MCP calls, OAuth
+discovery, client registration, initial token exchange and renewal. Before a
+socket opens, the transport validates the URL and every DNS answer, rejects
+private/reserved or malformed addresses, then pins a fresh connection to an
+approved numeric address. The original hostname remains the HTTP Host and TLS
+server name, with certificate verification enabled. Redirects never select a
+new destination, and cancellation closes the upstream socket.
+
+Initial OAuth exchange and renewal use the same pure URL policy in `@cg/core`,
+including public IP literals and HTTPS port 8443. Endpoint paths and queries
+are retained; stored base identities keep their existing normalization. The
+loopback development exception cannot be enabled in production, and it never
+permits a public hostname to resolve to a loopback address.
+
+OAuth flow cookies contain the initiating user's authenticated Convex ID.
+Callbacks verify the current user's identity before exchanging a code or
+storing a credential. An account switch or an older cookie without an owner
+requires starting the connection again. Deploy the new
+`features/auth/identity:currentUserId` query with the backend before serving
+the corresponding dashboard code; a missing query fails closed.
+
+The public-upstream transport deliberately excludes the trusted private device
+relay and the local Blender bridge, whose destinations have separate contracts.
+These controls do not authorize an upstream action or replace the existing
+per-action policy and approval checks. A real account connection still requires
+its reviewed service endpoint to be available.

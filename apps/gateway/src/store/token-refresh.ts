@@ -6,8 +6,11 @@
  * provider body, token, client secret, or refresh token is ever logged or placed
  * in an error message.
  */
+import { safeFetch } from "@cg/transport"
 import {
   OAUTH_REFRESH_SKEW_MS,
+  normalizeUpstreamEndpointUrl,
+  upstreamUrlPolicyFromEnvironment,
   type OAuthRenewal,
 } from "@cg/core"
 
@@ -61,7 +64,7 @@ export async function refreshOAuthToken(
 
   let response: Response
   try {
-    response = await (options.fetcher ?? fetch)(endpoint, {
+    response = await (options.fetcher ?? safeFetch)(endpoint, {
       method: "POST",
       headers: {
         "content-type": "application/x-www-form-urlencoded",
@@ -203,29 +206,9 @@ async function readDocument(response: Response): Promise<Record<string, unknown>
 }
 
 function safeTokenEndpoint(raw: string): string {
-  let url: URL
   try {
-    url = new URL(raw)
+    return normalizeUpstreamEndpointUrl(raw, upstreamUrlPolicyFromEnvironment(process.env))
   } catch {
     throw new OAuthRefreshError("invalid_endpoint", true)
   }
-  const host = url.hostname.toLowerCase().replace(/\.+$/, "")
-  if (
-    url.protocol !== "https:" ||
-    url.username !== "" ||
-    url.password !== "" ||
-    url.hash !== "" ||
-    (url.port !== "" && url.port !== "443") ||
-    host.length === 0 ||
-    host === "localhost" ||
-    host.endsWith(".localhost") ||
-    host.endsWith(".local") ||
-    !host.includes(".") ||
-    /^\d+(?:\.\d+){3}$/.test(host) ||
-    host.startsWith("[")
-  ) {
-    throw new OAuthRefreshError("invalid_endpoint", true)
-  }
-  url.hostname = host
-  return url.href
 }

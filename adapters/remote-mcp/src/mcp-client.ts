@@ -7,7 +7,9 @@
  * initialize (HTTP 404/405 or JSON-RPC method-not-found) retain the historical
  * single-shot tools/call compatibility path.
  */
-import { blockedRange, GatewayError, isLoopback } from "@cg/core"
+import { GatewayError, normalizeUpstreamEndpointUrl, upstreamUrlPolicyFromEnvironment } from "@cg/core"
+import { safeFetch } from "@cg/transport"
+import type { FetchLike } from "@cg/transport"
 import { parseRpcBody, readToolResult } from "./mcp-parse"
 
 export const MCP_PROTOCOL_VERSION = "2025-06-18"
@@ -15,6 +17,8 @@ export const MAX_RESPONSE_BYTES = 1_048_576
 export const MAX_LARGE_RESPONSE_BYTES = 8_388_608
 const MAX_SESSION_ID_LENGTH = 256
 let requestCounter = 0
+
+export type RemoteMcpOptions = { fetcher?: FetchLike }
 
 export type CredentialHeader = { name: string; value: string }
 const HEADER_NAME = /^[A-Za-z0-9-]{1,64}$/
@@ -49,15 +53,17 @@ export async function callTool(
   signal: AbortSignal,
   credentialHeader?: CredentialHeader,
   maxResponseBytes: number = MAX_RESPONSE_BYTES,
+  options: RemoteMcpOptions = {},
 ): Promise<unknown> {
   const endpoint = endpointFor(baseUrl)
+  const fetcher = options.fetcher ?? safeFetch
   const responseLimit = boundedResponseLimit(maxResponseBytes)
   if (signal.aborted) throw cancelled()
   const cred = credentialHeader ?? credentialHeaderFor(undefined, token)
 
-  const initialized = await initialize(endpoint, cred, signal, responseLimit)
+  const initialized = await initialize(endpoint, cred, signal, responseLimit, fetcher)
   if (initialized.mode === "session") {
-    await sendInitialized(endpoint, cred, signal, initialized.sessionId)
+    await sendInitialized(endpoint, cred, signal, fetcher, initialized.sessionId)
   }
   const call = await postRpc(
     endpoint,
@@ -70,6 +76,7 @@ export async function callTool(
       params: { name, arguments: args },
     },
     responseLimit,
+    fetcher,
     initialized.mode === "session" ? initialized.sessionId : undefined,
   )
   assertUsableResponse(call.response)
@@ -81,6 +88,7 @@ async function initialize(
   cred: CredentialHeader,
   signal: AbortSignal,
   responseLimit: number,
+  fetcher: FetchLike,
 ): Promise<InitResult> {
   const id = nextRequestId()
   const rpc = await postRpc(endpoint, cred, signal, {
@@ -92,7 +100,7 @@ async function initialize(
       capabilities: {},
       clientInfo: { name: "connectors-gateway", version: "0.4.0" },
     },
-  }, responseLimit, undefined, true)
+  }, responseLimit, fetcher, undefined, true)
 
   if (rpc.response.status === 404 || rpc.response.status === 405) return { mode: "legacy" }
   assertUsableResponse(rpc.response)
@@ -107,12 +115,13 @@ async function sendInitialized(
   endpoint: URL,
   cred: CredentialHeader,
   signal: AbortSignal,
+  fetcher: FetchLike,
   sessionId?: string,
 ): Promise<void> {
   const response = await postNotification(endpoint, cred, signal, {
     jsonrpc: "2.0",
     method: "notifications/initialized",
-  }, sessionId)
+  }, fetcher, sessionId)
   // Notifications normally return 202/204, but servers may return an empty 200.
   if (response.status >= 200 && response.status < 300) return
   assertUsableResponse(response)
@@ -124,11 +133,12 @@ async function postRpc(
   signal: AbortSignal,
   payload: Record<string, unknown>,
   responseLimit: number,
+  fetcher: FetchLike,
   sessionId?: string,
   allowLegacyStatus = false,
 ): Promise<RpcResponse> {
   const id = payload["id"] as number
-  const response = await doFetch(endpoint, cred, signal, JSON.stringify(payload), sessionId)
+  const response = await doFetch(endpoint, cred, signal, JSON.stringify(payload), fetcher, sessionId)
   if (allowLegacyStatus && (response.status === 404 || response.status === 405)) {
     return { response, raw: "", id }
   }
@@ -143,9 +153,10 @@ async function postNotification(
   cred: CredentialHeader,
   signal: AbortSignal,
   payload: Record<string, unknown>,
+  fetcher: FetchLike,
   sessionId?: string,
 ): Promise<Response> {
-  const response = await doFetch(endpoint, cred, signal, JSON.stringify(payload), sessionId)
+  const response = await doFetch(endpoint, cred, signal, JSON.stringify(payload), fetcher, sessionId)
   if (isRedirect(response)) throw redirectError()
   return response
 }
@@ -155,6 +166,7 @@ async function doFetch(
   cred: CredentialHeader,
   signal: AbortSignal,
   body: string,
+  fetcher: FetchLike,
   sessionId?: string,
 ): Promise<Response> {
   if (signal.aborted) throw cancelled()
@@ -166,7 +178,7 @@ async function doFetch(
   }
   if (sessionId !== undefined) headers["Mcp-Session-Id"] = sessionId
   try {
-    return await fetch(endpoint, { method: "POST", headers, body, signal, redirect: "manual" })
+    return await fetcher(endpoint, { method: "POST", headers, body, signal, redirect: "manual" })
   } catch (cause) {
     throw transportError(cause)
   }
@@ -248,16 +260,11 @@ function tooLarge(): GatewayError { return new GatewayError("UPSTREAM_ERROR", "T
 function cancelled(): GatewayError { return new GatewayError("CANCELLED", "The upstream call was cancelled.") }
 
 function endpointFor(baseUrl: string): URL {
-  let url: URL
-  try { url = new URL(baseUrl) } catch { throw new GatewayError("UPSTREAM_ERROR", "This connection has an invalid endpoint URL.") }
-  const loopback = isLoopback(url.hostname)
-  if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) {
-    throw new GatewayError("UPSTREAM_ERROR", "The upstream server must be reached over HTTPS.")
+  try {
+    return new URL(normalizeUpstreamEndpointUrl(baseUrl, upstreamUrlPolicyFromEnvironment(process.env)))
+  } catch {
+    throw new GatewayError("UPSTREAM_ERROR", "The upstream endpoint is not allowed.")
   }
-  if (!loopback && blockedRange(url.hostname) !== null) {
-    throw new GatewayError("UPSTREAM_ERROR", "The upstream server address is in a private, reserved, or non-global range.")
-  }
-  return url
 }
 
 function transportError(cause: unknown): GatewayError {

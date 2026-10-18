@@ -3,7 +3,7 @@
 #
 # There is no build step — Bun runs the TypeScript source directly, so the
 # image is the workspace plus its dependencies.
-FROM oven/bun:1.3.14-alpine
+FROM oven/bun:1.4.2-alpine
 ARG GATEWAY_REVISION=unknown
 ARG APP_VERSION=unknown
 LABEL org.opencontainers.image.revision=$GATEWAY_REVISION \

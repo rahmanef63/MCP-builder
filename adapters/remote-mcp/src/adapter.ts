@@ -18,6 +18,7 @@ import {
   MAX_LARGE_RESPONSE_BYTES,
   MAX_RESPONSE_BYTES,
 } from "./mcp-client"
+import type { RemoteMcpOptions } from "./mcp-client"
 import { resolveUpstreamTool } from "./upstream"
 import {
   assertCircuitAllows,
@@ -27,8 +28,13 @@ import {
   upstreamCircuitKey,
 } from "./reliability"
 
+export type { RemoteMcpOptions } from "./mcp-client"
+
 /** Build the adapter that executes `manifest`. Data in, behaviour out. */
-export function createRemoteMcpAdapter(manifest: ConnectorManifest): CloudAdapter {
+export function createRemoteMcpAdapter(
+  manifest: ConnectorManifest,
+  options: RemoteMcpOptions = {},
+): CloudAdapter {
   // A `local` manifest routed through a cloud adapter would reach the upstream over the
   // public internet instead of the device relay. Cheap to check here, and the roadmap
   // has users authoring manifests (docs/16 step 3), where `executor` is attacker-chosen.
@@ -67,7 +73,7 @@ export function createRemoteMcpAdapter(manifest: ConnectorManifest): CloudAdapte
       assertCircuitAllows(manifest.id, circuitKey)
       let output: unknown
       try {
-        output = await callTool(baseUrl, token, tool, args, context.signal, cred, maxResponseBytes)
+        output = await callTool(baseUrl, token, tool, args, context.signal, cred, maxResponseBytes, options)
       } catch (first) {
         const transient = isRetryableRemoteMcpError(first)
         if (!transient) {
@@ -81,7 +87,7 @@ export function createRemoteMcpAdapter(manifest: ConnectorManifest): CloudAdapte
         try {
           // No sleep: both attempts consume the SAME caller deadline. The retry
           // can never extend the execution budget configured by the executor.
-          output = await callTool(baseUrl, token, tool, args, context.signal, cred, maxResponseBytes)
+          output = await callTool(baseUrl, token, tool, args, context.signal, cred, maxResponseBytes, options)
         } catch (second) {
           if (isRetryableRemoteMcpError(second)) recordCircuitTransientFailure(manifest.id, circuitKey)
           else recordCircuitNonTransientOutcome(manifest.id, circuitKey)
