@@ -93,25 +93,40 @@ export function publicGatewayUrl(): string | null {
 }
 
 export function mcpEndpoint(gatewayUrl: string): string {
-  return `${gatewayUrl}${MCP_PATH}`
+  return `${gatewayUrl.replace(/\/+$/, "")}${MCP_PATH}`
 }
 
+export type McpClient = "claude-code" | "cursor" | "claude-desktop"
+
 /**
- * `mcpServers` entry for Claude Desktop / Cursor / any mcp-remote host.
+ * Client-specific `mcpServers` entry. Desktop uses a stdio bridge.
  *
  * `apiKey` is the key the user minted a moment ago, held in React state for the
  * length of the page view. Omit it — or pass anything malformed — and the block
  * carries the placeholder instead.
  */
-export function mcpClientConfig(gatewayUrl: string, apiKey?: string | null): string {
+export function mcpClientConfig(
+  gatewayUrl: string,
+  apiKey?: string | null,
+  client: McpClient = "claude-code",
+): string {
+  const authorization = `Bearer ${apiKeyOrPlaceholder(apiKey)}`
+  const endpoint = mcpEndpoint(gatewayUrl)
+  const server = client === "claude-desktop"
+    ? {
+        command: "npx",
+        args: ["-y", "mcp-remote", endpoint, "--header", "Authorization:${AUTH_HEADER}"],
+        env: { AUTH_HEADER: authorization },
+      }
+    : {
+        ...(client === "claude-code" ? { type: "http" } : {}),
+        url: endpoint,
+        headers: { Authorization: authorization },
+      }
   return JSON.stringify(
     {
       mcpServers: {
-        "connectors-gateway": {
-          type: "http",
-          url: mcpEndpoint(gatewayUrl),
-          headers: { Authorization: `Bearer ${apiKeyOrPlaceholder(apiKey)}` },
-        },
+        "connectors-gateway": server,
       },
     },
     null,
@@ -130,14 +145,19 @@ export function mcpClientConfig(gatewayUrl: string, apiKey?: string | null): str
  */
 export function verifyCommand(gatewayUrl: string, apiKey?: string | null): string {
   return [
-    "curl -sS",
+    "curl -fsS",
     `-H "Authorization: Bearer ${apiKeyOrPlaceholder(apiKey)}"`,
-    `${gatewayUrl}/v1/catalog`,
+    quoteShell(`${gatewayUrl.replace(/\/+$/, "")}/v1/catalog`),
   ].join(" ")
 }
 
 /** Env block for the local agent (docs/04) — relay URL only, no secret. */
 export function agentEnvSnippet(gatewayUrl: string): string {
-  const relay = gatewayUrl.replace(/^http/, "ws")
-  return `CG_GATEWAY_URL=${relay}/device`
+  const relay = gatewayUrl.replace(/\/+$/, "").replace(/^http/, "ws")
+  return `CG_GATEWAY_URL=${quoteShell(`${relay}/device`)}`
+}
+
+/** Keep URLs literal when copied into a POSIX shell, including apostrophes. */
+function quoteShell(value: string): string {
+  return "'" + value.replace(/'/g, "'\"'\"'") + "'"
 }

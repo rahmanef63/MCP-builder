@@ -45,23 +45,50 @@ const TIMEOUT_MS = 8000
 const MAX_BYTES = 64 * 1024
 
 async function getJson(url: string): Promise<Record<string, unknown> | null> {
-  let response: Response
   try {
-    response = await fetch(url, {
+    const response = await fetch(url, {
       headers: { accept: "application/json" },
-      redirect: "follow",
+      // A redirect target has not passed the upstream URL gate.
+      redirect: "manual",
       signal: AbortSignal.timeout(TIMEOUT_MS),
       cache: "no-store",
     })
-  } catch {
-    return null
-  }
-  if (!response.ok) return null
-  const text = (await response.text()).slice(0, MAX_BYTES)
-  try {
-    const value: unknown = JSON.parse(text)
+    const declared = Number(response.headers.get("content-length"))
+    if (!response.ok || (Number.isFinite(declared) && declared > MAX_BYTES)) {
+      void response.body?.cancel().catch(() => {})
+      return null
+    }
+    if (response.body === null) return null
+
+    const reader = response.body.getReader()
+    const chunks: Uint8Array[] = []
+    let total = 0
+    try {
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        if (value === undefined) continue
+        total += value.byteLength
+        if (total > MAX_BYTES) {
+          void reader.cancel().catch(() => {})
+          return null
+        }
+        chunks.push(value)
+      }
+    } finally {
+      reader.releaseLock()
+    }
+
+    const bytes = new Uint8Array(total)
+    let offset = 0
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset)
+      offset += chunk.byteLength
+    }
+    const value: unknown = JSON.parse(new TextDecoder().decode(bytes))
     return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : null
   } catch {
+    // A failed body read, including a timeout, can try the next well-known URL.
     return null
   }
 }

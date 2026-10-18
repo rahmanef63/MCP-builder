@@ -57,6 +57,11 @@ export function compileSchema(schema: JsonSchema): ValidateFunction {
     throw new GatewayError("INVALID_INPUT", "Schema is not a valid JSON Schema document.")
   }
 
+  // A Promise is truthy before validation finishes; callers require a boolean.
+  if ("$async" in validate && validate.$async === true) {
+    throw new GatewayError("INVALID_INPUT", "Schema must use synchronous validation.")
+  }
+
   compiled.set(schema, validate)
   return validate
 }

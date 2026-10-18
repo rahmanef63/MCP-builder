@@ -18,6 +18,7 @@ import {
   mcpClientConfig,
   mcpEndpoint,
   verifyCommand,
+  type McpClient,
 } from "@/lib/gateway-config"
 
 /**
@@ -43,6 +44,7 @@ export function SetupConsole({
   preloadedKeys: PreloadedApiKeys | null
 }) {
   const [issued, setIssued] = useState<IssuedKey | null>(null)
+  const [client, setClient] = useState<McpClient>("claude-code")
 
   return (
     <>
@@ -63,12 +65,30 @@ export function SetupConsole({
 
       <SectionCard
         title="Connect an AI client"
-        description="One HTTPS endpoint, but not every host can use a key. Paste this into Claude Code, Claude Desktop, Cursor, mcp-remote, or anything you configure with a file — hosts that let you set an Authorization header."
+        description="Choose your client to generate its configuration, then paste it into that client’s MCP settings."
       >
+        <label className="block space-y-2 text-sm font-medium">
+          <span>AI client</span>
+          <select
+            className="field"
+            value={client}
+            onChange={(event) => setClient(event.target.value as McpClient)}
+          >
+            <option value="claude-code">Claude Code</option>
+            <option value="cursor">Cursor</option>
+            <option value="claude-desktop">Claude Desktop (mcp-remote)</option>
+          </select>
+        </label>
+        {client === "claude-desktop" ? (
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            Requires Node.js and npx on your machine. The configuration starts mcp-remote
+            to bridge the desktop client to this gateway.
+          </p>
+        ) : null}
         <CopyField label="Gateway endpoint" value={mcpEndpoint(gatewayUrl)} />
         <CopyField
           label="Client configuration"
-          value={mcpClientConfig(gatewayUrl, issued?.token)}
+          value={mcpClientConfig(gatewayUrl, issued?.token, client)}
         />
         <p className="text-sm leading-relaxed text-muted-foreground">
           {issued === null ? (
@@ -88,7 +108,7 @@ export function SetupConsole({
 
       <SectionCard
         title="Check the key works"
-        description="Run this locally to prove the gateway accepts the key."
+        description="Run this in a POSIX shell (Bash, zsh, or WSL) to prove the gateway accepts the key. An HTTP error returns a failed command."
       >
         <CopyField label="Verify" value={verifyCommand(gatewayUrl, issued?.token)} />
       </SectionCard>
