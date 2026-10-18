@@ -108,7 +108,12 @@ describe("validateManifest", () => {
   test("rejects an inputSchema that is not a compilable JSON Schema", () => {
     const manifest = baseManifest()
     const actions = manifest["actions"] as Record<string, unknown>[]
-    if (actions[0]) actions[0]["inputSchema"] = { type: "not-a-json-type" }
+    if (actions[0]) {
+      actions[0]["inputSchema"] = {
+        type: "object",
+        properties: { value: { type: "not-a-json-type" } },
+      }
+    }
 
     const error = expectInvalid(manifest)
     expect(error.code).toBe("INVALID_INPUT")

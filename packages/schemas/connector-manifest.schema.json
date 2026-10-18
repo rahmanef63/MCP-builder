@@ -158,6 +158,13 @@
   },
   "additionalProperties": true,
   "$defs": {
+    "objectSchema": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "const": "object" }
+      }
+    },
     "action": {
       "$anchor": "action",
       "title": "ActionDefinition",
@@ -173,7 +180,7 @@
       "properties": {
         "id": {
           "type": "string",
-          "minLength": 1
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9.-]{0,127}$"
         },
         "title": {
           "type": "string",
@@ -184,10 +191,10 @@
           "minLength": 1
         },
         "inputSchema": {
-          "type": "object"
+          "$ref": "#/$defs/objectSchema"
         },
         "outputSchema": {
-          "type": "object"
+          "$ref": "#/$defs/objectSchema"
         },
         "risk": {
           "enum": [

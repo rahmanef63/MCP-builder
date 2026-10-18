@@ -117,8 +117,8 @@ describe("snippets", () => {
   })
 
   test("agent env uses the outbound websocket relay path", () => {
-    expect(agentEnvSnippet(base)).toBe("CG_GATEWAY_URL=wss://connect.example.com/device")
-    expect(agentEnvSnippet("http://localhost:8787")).toBe("CG_GATEWAY_URL=ws://localhost:8787/device")
+    expect(agentEnvSnippet(base)).toBe("CG_GATEWAY_URL='wss://connect.example.com/device'")
+    expect(agentEnvSnippet("http://localhost:8787")).toBe("CG_GATEWAY_URL='ws://localhost:8787/device'")
   })
 })
 

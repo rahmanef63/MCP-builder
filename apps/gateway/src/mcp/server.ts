@@ -75,7 +75,9 @@ export type McpDeps = PipelineDeps & CatalogDeps
 export type McpInput = {
   scope: RequestScope
   token: string | null
-  body: unknown
+  body?: unknown
+  /** HTTP body parsing is deferred until authentication succeeds. */
+  readBody?: () => Promise<unknown>
   /** Canonical RFC 8707 resource for this MCP endpoint. */
   resource: string
   transport?: Partial<McpTransportHeaders>
@@ -100,9 +102,12 @@ export async function handleMcpRequest(deps: McpDeps, input: McpInput): Promise<
     return { status: 401, body: jsonRpcError(null, JSONRPC_ERRORS.INVALID_REQUEST, "Unauthorized.") }
   }
 
+  // Let transport reader failures retain their HTTP error mapping.
+  const body = input.readBody ? await input.readBody() : input.body
+
   let request: JsonRpcRequest
   try {
-    request = parseJsonRpcRequest(input.body)
+    request = parseJsonRpcRequest(body)
   } catch (cause) {
     const error = toGatewayError(cause)
     return { status: 400, body: jsonRpcError(null, JSONRPC_ERRORS.INVALID_REQUEST, error.message) }

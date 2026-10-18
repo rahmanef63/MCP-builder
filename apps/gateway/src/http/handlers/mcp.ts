@@ -29,11 +29,10 @@ export function challengeFor(config: GatewayConfig): string {
 
 export async function handleMcp(context: RouteContext): Promise<Response> {
   try {
-    const body = await readJsonBody(context.request)
     const outcome = await handleMcpRequest(context.deps, {
       scope: context.scope,
       token: parseAuthorizationHeader(context.request.headers.get("authorization")),
-      body,
+      readBody: () => readJsonBody(context.request),
       resource: mcpResourceUrl(context.deps.config),
       transport: {
         protocolVersion: context.request.headers.get("mcp-protocol-version"),

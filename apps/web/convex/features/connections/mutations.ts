@@ -15,7 +15,7 @@ import { fail } from "../../_shared/errors"
 import { assertIdentifier } from "../../_shared/input"
 import { assertSealedEnvelope } from "../../_shared/sealed_envelope"
 import { MAX_CONNECTIONS_PER_CONNECTOR } from "../../_shared/limits"
-import { assertUpstreamUrl } from "../../_shared/upstream_url"
+import { assertConnectionUrl } from "../../_shared/connection_url"
 import { authTypeValidator } from "../../_shared/validators"
 import type { Doc } from "../../_generated/dataModel"
 import type { MutationCtx } from "../../_generated/server"
@@ -34,7 +34,7 @@ export const upsert = mutation({
     const userId = await requireUser(ctx)
     const connectorId = assertIdentifier(args.connectorId, "connectorId")
     // Validated before any read, so a rejected URL never touches the database.
-    const baseUrl = assertUpstreamUrl(args.baseUrl)
+    const baseUrl = assertConnectionUrl(connectorId, args.baseUrl)
     const tokenCipher = assertSealedEnvelope(args.tokenCipher)
     const tokenExpiresAt = assertOptionalTimestamp(args.tokenExpiresAt)
     const renewalCipher =
