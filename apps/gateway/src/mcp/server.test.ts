@@ -8,6 +8,7 @@ import {
   SERVER_INSTRUCTIONS,
   negotiateProtocolVersion,
   toToolResult,
+  MAX_TOOL_TEXT_CHARS,
 } from "./server"
 import { MCP_META_KEYS, MCP_MODERN_PROTOCOL_VERSION } from "./protocol"
 import { GATEWAY_SKILL_URI } from "./skill"
@@ -400,5 +401,30 @@ describe("toToolResult", () => {
     })
     expect(body.isError).toBe(true)
     expect((body.content as { text: string }[])[0]?.text).toBe("DEVICE_OFFLINE: No device.")
+  })
+
+  test("an oversized output text is bounded and flagged; structuredContent stays whole", () => {
+    const big = "x".repeat(MAX_TOOL_TEXT_CHARS * 2)
+    const body = toToolResult({ status: "success", output: { big }, timingMs: 1 })
+    const text = (body.content as { text: string }[])[0]?.text ?? ""
+    expect(text.length).toBeLessThan(MAX_TOOL_TEXT_CHARS + 200)
+    expect(text).toContain("[truncated ")
+    expect((body._meta as Record<string, unknown>)["cg/truncated"]).toBe(true)
+    expect((body.structuredContent as { big: string }).big.length).toBe(big.length)
+  })
+
+  test("a small output is not truncated and carries no _meta without a receipt", () => {
+    const body = toToolResult({ status: "success", output: { ok: true }, timingMs: 1 })
+    expect(body._meta).toBeUndefined()
+  })
+
+  test("a receipt echoes the request id on success and on error", () => {
+    const ok = toToolResult({ status: "success", output: {}, timingMs: 7 }, { requestId: "req_1" })
+    expect((ok._meta as Record<string, unknown>)["cg/receipt"]).toEqual({ requestId: "req_1", timingMs: 7 })
+    const err = toToolResult(
+      { status: "error", error: { code: "POLICY_DENIED", message: "no" }, timingMs: 2 },
+      { requestId: "req_2" },
+    )
+    expect((err._meta as Record<string, unknown>)["cg/receipt"]).toEqual({ requestId: "req_2", timingMs: 2 })
   })
 })

@@ -24,6 +24,32 @@ const BEARER_VALUE = /\b(bearer)\s+\S+/gi
  */
 const CREDENTIAL_VALUE = /\bcg[a-z]_[A-Za-z0-9][A-Za-z0-9_-]{0,127}_[A-Za-z0-9-]{16,512}\b/g
 
+/**
+ * Well-known third-party credential shapes (adopted from SI-Coder's
+ * lib/redact-env.js). Each has a vendor prefix that never occurs in real
+ * content, so stripping them from tool output has no false positives on data a
+ * caller asked for, and enforces AGENTS.md invariant 5 for upstream tokens that
+ * an adapter echoes back. Deliberately no generic "long random run" rule:
+ * commit SHAs and resource ids must survive.
+ */
+const PROVIDER_CREDENTIALS: readonly RegExp[] = [
+  /\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}\b/g,
+  /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g,
+  /\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}\b/g,
+  /\bsk-(?:proj-|ant-)?[A-Za-z0-9_-]{20,}\b/g,
+  /\bxox[abposr]-[A-Za-z0-9-]{10,}\b/g,
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
+]
+
+function stripProviderCredentials(value: string): string {
+  let out = value
+  for (const pattern of PROVIDER_CREDENTIALS) out = out.replace(pattern, REDACTED)
+  return out
+}
+
+/** `?token=…` / `&access_token=…` in a logged URL (adopted from MSO lib/orchestration/redaction.ts). Log path only. */
+const QUERY_SECRET = /([?&](?:[a-z_]*token|key|api_key|secret|password|code|client_secret)=)[^&#\s]+/gi
+
 export const REDACTED = "[redacted]"
 const CIRCULAR = "[circular]"
 const TRUNCATED = "[truncated]"
@@ -34,7 +60,9 @@ export function isSensitiveKey(key: string): boolean {
 }
 
 export function redactText(value: string): string {
-  const masked = value.replace(BEARER_VALUE, `$1 ${REDACTED}`).replace(CREDENTIAL_VALUE, REDACTED)
+  const masked = stripProviderCredentials(
+    value.replace(QUERY_SECRET, `$1${REDACTED}`).replace(BEARER_VALUE, `$1 ${REDACTED}`).replace(CREDENTIAL_VALUE, REDACTED),
+  )
   return stripPaths(masked)
 }
 
@@ -57,7 +85,7 @@ export function redactText(value: string): string {
  * truncation. Those belong to the log path.
  */
 export function stripCredentials(value: string): string {
-  return value.replace(CREDENTIAL_VALUE, REDACTED)
+  return stripProviderCredentials(value.replace(CREDENTIAL_VALUE, REDACTED))
 }
 
 /** `stripCredentials` over every string in a structure, shape preserved. */
