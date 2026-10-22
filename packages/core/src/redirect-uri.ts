@@ -58,6 +58,10 @@ export function isValidRedirectUri(value: unknown): value is string {
   // registration than to mint a client that can never complete a flow.
   if (url.href !== value) return false
 
+  // Userinfo (`https://claude.ai@evil.test/`) has no legitimate use in a
+  // redirect and exists mainly to make a URI read as a host it is not.
+  if (url.username.length > 0 || url.password.length > 0) return false
+
   const scheme = url.protocol.slice(0, -1).toLowerCase()
   if (scheme === "https") return url.hostname.length > 0
   if (scheme === "http") return LOOPBACK_HOSTS.has(url.hostname.toLowerCase())

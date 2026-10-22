@@ -312,7 +312,7 @@ async function callTool(
     actionId: target.actionId,
     input: typeof args === "object" && args !== null && !Array.isArray(args) ? args : {},
   })
-  const value = toToolResult(result)
+  const value = toToolResult(result, { requestId: input.scope.requestId })
   return modern ? completeModernResult(value, SERVER_INFO) : value
 }
 
@@ -348,18 +348,45 @@ async function auditCatalogMiss(
   }
 }
 
+/**
+ * Upper bound on the human-readable text block handed to the model. Adapters
+ * already cap upstream bodies (1–8 MiB); this keeps one tool result from
+ * flooding the model context. structuredContent is left intact for clients
+ * that parse it. Adopted from MSO's bounded-output tools.
+ */
+export const MAX_TOOL_TEXT_CHARS = 64 * 1024
+
+/** Audit receipt echoed to the client so a result can be matched to its audit row. */
+export interface ToolReceipt {
+  requestId: string
+}
+
+function boundedText(text: string): { text: string; truncated: boolean } {
+  if (text.length <= MAX_TOOL_TEXT_CHARS) return { text, truncated: false }
+  const omitted = text.length - MAX_TOOL_TEXT_CHARS
+  return {
+    text: `${text.slice(0, MAX_TOOL_TEXT_CHARS)}\n…[truncated ${omitted} chars; full result in structuredContent]`,
+    truncated: true,
+  }
+}
+
 /** Tool failures are results so the model can react to the stable error code. */
-export function toToolResult(result: ExecutionResult): Record<string, unknown> {
+export function toToolResult(result: ExecutionResult, receipt?: ToolReceipt): Record<string, unknown> {
+  const meta: Record<string, unknown> = {}
+  if (receipt) meta["cg/receipt"] = { requestId: receipt.requestId, timingMs: result.timingMs }
   if (result.status === "error") {
     const error = result.error ?? { code: "INTERNAL", message: "The action failed." }
-    return {
+    const body: Record<string, unknown> = {
       content: [{ type: "text", text: `${error.code}: ${error.message}` }],
       isError: true,
     }
+    if (receipt) body._meta = meta
+    return body
   }
   const output = result.output ?? null
+  const bounded = boundedText(JSON.stringify(output) ?? "null")
   const body: Record<string, unknown> = {
-    content: [{ type: "text", text: JSON.stringify(output) }],
+    content: [{ type: "text", text: bounded.text }],
     isError: false,
   }
   // Every descriptor has an object outputSchema. Preserve object outputs and
@@ -370,5 +397,7 @@ export function toToolResult(result: ExecutionResult): Record<string, unknown> {
       ? output
       : { result: output }
   if (result.files && result.files.length > 0) body.files = result.files
+  if (bounded.truncated) meta["cg/truncated"] = true
+  if (Object.keys(meta).length > 0) body._meta = meta
   return body
 }
