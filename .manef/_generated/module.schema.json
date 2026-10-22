@@ -1,0 +1,431 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://manef.invalid/contracts/module/1.0.0",
+  "title": "MANEF module descriptor 1.0.0",
+  "type": "object",
+  "properties": {
+    "contractVersion": {
+      "const": "1.0.0"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "kind": {
+      "enum": [
+        "library",
+        "service",
+        "toolkit",
+        "guidance"
+      ]
+    },
+    "runtime": {
+      "type": "object",
+      "properties": {
+        "language": {
+          "enum": [
+            "javascript",
+            "typescript",
+            "python"
+          ]
+        },
+        "minimumVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "manager": {
+          "enum": [
+            "node",
+            "bun",
+            "python"
+          ]
+        }
+      },
+      "required": [
+        "language",
+        "minimumVersion",
+        "manager"
+      ],
+      "additionalProperties": false
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "repository": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$"
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{40}$"
+        },
+        "channel": {
+          "enum": [
+            "main",
+            "review-candidate"
+          ]
+        }
+      },
+      "required": [
+        "repository",
+        "revision",
+        "channel"
+      ],
+      "additionalProperties": false
+    },
+    "layout": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/path"
+          },
+          "maxItems": 64
+        },
+        "tests": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/path"
+          },
+          "maxItems": 64
+        },
+        "docs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/path"
+          },
+          "maxItems": 64
+        }
+      },
+      "required": [
+        "source",
+        "tests",
+        "docs"
+      ],
+      "additionalProperties": false
+    },
+    "commands": {
+      "type": "object",
+      "properties": {
+        "check": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/command"
+          },
+          "maxItems": 32
+        },
+        "test": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/command"
+          },
+          "maxItems": 32
+        },
+        "build": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/command"
+          },
+          "maxItems": 32
+        }
+      },
+      "required": [
+        "check",
+        "test",
+        "build"
+      ],
+      "additionalProperties": false
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/capability"
+      },
+      "maxItems": 128
+    },
+    "trust": {
+      "type": "object",
+      "properties": {
+        "identityAuthority": {
+          "enum": [
+            "product",
+            "host",
+            "none"
+          ]
+        },
+        "tenantBoundary": {
+          "enum": [
+            "product-owned",
+            "local-workspace",
+            "consumer-owned"
+          ]
+        },
+        "secretOwner": {
+          "enum": [
+            "product",
+            "host",
+            "none"
+          ]
+        },
+        "sandbox": {
+          "enum": [
+            "none",
+            "host-policy-only"
+          ]
+        }
+      },
+      "required": [
+        "identityAuthority",
+        "tenantBoundary",
+        "secretOwner",
+        "sandbox"
+      ],
+      "additionalProperties": false
+    },
+    "config": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "enum": [
+            "service",
+            "library",
+            "toolkit",
+            "guidance"
+          ]
+        },
+        "secrets": {
+          "const": "references-only"
+        },
+        "defaultMode": {
+          "const": "preview"
+        },
+        "network": {
+          "const": "explicit-adapter"
+        }
+      },
+      "required": [
+        "profile",
+        "secrets",
+        "defaultMode",
+        "network"
+      ],
+      "additionalProperties": false
+    },
+    "health": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "liveness-only",
+            "capability-declaration",
+            "not-a-service"
+          ]
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^/[a-zA-Z0-9/_-]*$"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "path"
+      ],
+      "additionalProperties": false
+    },
+    "extensions": {
+      "type": "object",
+      "maxProperties": 64,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]*(?:[.:/][a-z0-9][a-z0-9._/-]*)+$"
+      },
+      "additionalProperties": true
+    }
+  },
+  "required": [
+    "contractVersion",
+    "id",
+    "name",
+    "version",
+    "kind",
+    "runtime",
+    "source",
+    "layout",
+    "commands",
+    "capabilities",
+    "trust",
+    "config",
+    "health"
+  ],
+  "additionalProperties": false,
+  "definitions": {
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^(?!.*\\.\\.)(?![A-Za-z][A-Za-z0-9+.-]*:)(?!.*[\\\\%\\x00-\\x1F\\x7F])(?:\\./)?(?!\\.{1,2}(?:/|$))[^/#]+(?:/(?!\\.{1,2}(?:/|$))[^/#]+)*$"
+    },
+    "command": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1024
+      },
+      "maxItems": 32,
+      "minItems": 1
+    },
+    "reference": {
+      "type": "object",
+      "properties": {
+        "format": {
+          "enum": [
+            "json-schema",
+            "typescript",
+            "python-api",
+            "none"
+          ]
+        },
+        "ref": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^(?!.*\\.\\.)(?![A-Za-z][A-Za-z0-9+.-]*:)(?!.*[\\\\%\\x00-\\x1F\\x7F])(?:\\./)?(?!\\.{1,2}(?:/|$))[^/#]+(?:/(?!\\.{1,2}(?:/|$))[^/#]+)*(?:#[A-Za-z0-9_$./:~\\-]*)?$"
+            }
+          ]
+        }
+      },
+      "required": [
+        "format",
+        "ref"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "format": {
+                "const": "none"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "ref": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "ref": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "capability": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9]*(?:[._:-][a-z0-9]+)*$"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "input": {
+          "$ref": "#/definitions/reference"
+        },
+        "output": {
+          "$ref": "#/definitions/reference"
+        },
+        "effects": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "none",
+              "read",
+              "write",
+              "network",
+              "execute"
+            ]
+          },
+          "maxItems": 5,
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "requiredScopes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "maxItems": 64,
+          "uniqueItems": true
+        },
+        "mode": {
+          "enum": [
+            "declaration",
+            "preview",
+            "product-authorized"
+          ]
+        },
+        "risk": {
+          "enum": [
+            "read",
+            "write",
+            "dangerous"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "summary",
+        "input",
+        "output",
+        "effects",
+        "requiredScopes",
+        "mode",
+        "risk"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
