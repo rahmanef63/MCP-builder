@@ -1,0 +1,131 @@
+{
+  "contractVersion": "1.0.0",
+  "id": "mcp-builder",
+  "name": "MCP Builder / Connectors Gateway",
+  "version": "0.4.0",
+  "kind": "service",
+  "runtime": {
+    "language": "typescript",
+    "minimumVersion": "1.4.2",
+    "manager": "bun"
+  },
+  "source": {
+    "repository": "rahmanef63/MCP-builder",
+    "revision": "9ad134974942dec506398bf1f7afaaaf139c001b",
+    "channel": "review-candidate"
+  },
+  "layout": {
+    "source": [
+      "apps/gateway/src",
+      "apps/agent/src",
+      "apps/web",
+      "packages",
+      "adapters"
+    ],
+    "tests": [
+      "packages/registry/src/registry.test.ts",
+      "packages/registry/src/catalog.test.ts"
+    ],
+    "docs": [
+      "README.md",
+      "AGENTS.md",
+      "docs"
+    ]
+  },
+  "commands": {
+    "check": [
+      [
+        "bun",
+        "run",
+        "typecheck"
+      ],
+      [
+        "bun",
+        "run",
+        "typecheck:web"
+      ],
+      [
+        "bun",
+        "run",
+        "version:check"
+      ]
+    ],
+    "test": [
+      [
+        "bun",
+        "run",
+        "test"
+      ],
+      [
+        "bun",
+        "run",
+        "test:convex"
+      ]
+    ],
+    "build": [
+      [
+        "bun",
+        "run",
+        "build:web"
+      ]
+    ]
+  },
+  "capabilities": [
+    {
+      "id": "mcp.registry.describe",
+      "summary": "Describe the product-filtered connector catalog. Native catalogFor intersects installed connectors, connected credentials, device capabilities and caller scopes; discovery never replaces per-action authorization.",
+      "input": {
+        "format": "typescript",
+        "ref": "packages/registry/src/catalog.ts#CatalogInput"
+      },
+      "output": {
+        "format": "typescript",
+        "ref": "packages/registry/src/catalog.ts#CatalogEntry"
+      },
+      "effects": [
+        "read"
+      ],
+      "requiredScopes": [
+        "mcp.read"
+      ],
+      "mode": "product-authorized",
+      "risk": "read"
+    }
+  ],
+  "trust": {
+    "identityAuthority": "product",
+    "tenantBoundary": "product-owned",
+    "secretOwner": "product",
+    "sandbox": "host-policy-only"
+  },
+  "config": {
+    "profile": "service",
+    "secrets": "references-only",
+    "defaultMode": "preview",
+    "network": "explicit-adapter"
+  },
+  "health": {
+    "kind": "liveness-only",
+    "path": "/healthz"
+  },
+  "extensions": {
+    "manef:native-contracts": {
+      "mcp.registry.describe": {
+        "source": "packages/registry/src/catalog.ts#catalogFor",
+        "registry": "packages/registry/src/registry.ts#ConnectorRegistry",
+        "scope": "packages/core/src/scopes.ts#SCOPE_READ",
+        "mapping": "Integration capability alias, not a claimed native HTTP endpoint; caller identity, scopes and catalog inputs must come from the product adapter."
+      }
+    },
+    "manef:boundaries": [
+      "Use @cg/gateway/edge for one shared edge implementation. All @cg packages are private source workspaces, not independently published packages.",
+      "Gateway policy and device allowlists do not provide an OS sandbox. Persistent outbound relay needs a suitable host.",
+      "No registry description implies paired devices, upstream account access, authorization or successful execution."
+    ],
+    "manef:runtime-notes": {
+      "gatewayEdge": "Web Request/Response and WebCrypto; documented Bun and Node22 compatibility",
+      "dashboard": "Next16.3.1, React19.2.8, Convex1.44.0",
+      "existingDrift": "Root Dockerfile Bun1.3.14 builder is below package requirement Bun>=1.4.2; retained as a product-owned adoption constraint."
+    }
+  }
+}
