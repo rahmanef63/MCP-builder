@@ -7,6 +7,12 @@ Build a secure connector runtime that exposes a single remote gateway to AI clie
 - remote/cloud applications;
 - local desktop applications.
 
+## Portfolio ownership
+
+Manef portfolio product. Owner agent: **manef** (Grok Bot portfolio lead, Products). Connector-runtime work may also surface under the connectors / connectors-gateway agent lanes; do not invent other owners.
+
+Repo: `rahmanef63/MCP-builder`.
+
 ## Read first
 
 1. `docs/00-product-definition.md`
@@ -20,6 +26,10 @@ it, or wondering why there are two hosts — read `docs/21-add-a-connector.md` a
 `docs/20-vercel-template.md` first. `CHECKLIST.md` is what must be true before
 a real AI client points at a real account; this file is how to build.
 
+If comparing this gateway to MSO MCP / SI-Coder strengths and remaining gaps,
+read `docs/22-mso-gap-analysis.md` (dated 2026-10-23; includes the 3-way
+redaction table).
+
 If working on Blender, also read `docs/11-blender-reference.md`.
 
 If working on the local agent, also read:
@@ -27,6 +37,25 @@ If working on the local agent, also read:
 - `docs/04-device-pairing.md`
 - `docs/05-local-agent-protocol.md`
 - `docs/14-threat-model.md`
+
+## Current state (2026-10)
+
+- **MANEF AI module foundation (PR #5, merge `b6da49c`)** landed under `.manef/`:
+  versioned descriptor (`module.json`), preview-only `config.json`,
+  `foundation.lock.json`, and the offline checker at
+  `.manef/_generated/check-module.mjs`. Run
+  `node .manef/_generated/check-module.mjs` from the repo root. It validates
+  descriptor + layout paths only; it does not run declared commands or prove
+  live readiness. Native Bun workspaces, locks, auth, credentials, connectors
+  and deploy entry points stay owned by this repo — do not replace them with
+  generated foundation files.
+- **Gateway hardening (PR #6)** is on main: OAuth redirect URIs reject
+  `userinfo`; tool-result text is capped at 64 Ki chars with `_meta["cg/truncated"]`
+  and every `tools/call` carries `_meta["cg/receipt"]` (`requestId`, `timingMs`);
+  observability redacts provider token shapes and query-string secrets (see
+  `packages/observability/src/redact.ts` and `docs/22-mso-gap-analysis.md`).
+- MVP boundary below is unchanged: careerpack + blender + one public entry +
+  pairing + policy + audit. No marketplace/billing/workflow engine yet.
 
 ## Non-negotiable invariants
 
