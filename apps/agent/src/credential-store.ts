@@ -81,7 +81,10 @@ function hasSecretServiceSession(env: Record<string, string | undefined>): boole
 
 function commandExists(command: string, run: Run): boolean {
   const result = run(command, ["--help"])
-  return result.status !== null
+  // A spawn that never happened has no exit status. Bun reports that as `undefined`,
+  // Node as `null`, so only an actual number means the binary was executed. Treating
+  // `undefined` as "found" made every Linux box claim a Secret Service it does not have.
+  return typeof result.status === "number"
 }
 
 function runCommand(command: string, args: readonly string[], input?: string): RunResult {
@@ -93,7 +96,12 @@ function runCommand(command: string, args: readonly string[], input?: string): R
       windowsHide: true,
       stdio: [input === undefined ? "ignore" : "pipe", "pipe", "ignore"],
     })
-    return { status: result.status, stdout: typeof result.stdout === "string" ? result.stdout : "" }
+    // Bun returns `undefined` where Node returns `null` for a signal or a failed spawn.
+    // Normalize once here so callers never have to know which runtime they are on.
+    return {
+      status: typeof result.status === "number" ? result.status : null,
+      stdout: typeof result.stdout === "string" ? result.stdout : "",
+    }
   } catch {
     return { status: null, stdout: "" }
   }

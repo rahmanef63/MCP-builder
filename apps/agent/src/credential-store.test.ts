@@ -3,14 +3,16 @@ import { createNativeCredentialStore } from "./credential-store"
 
 type Call = { command: string; args: readonly string[]; input?: string }
 
-function fakeRun(responses: Array<{ status: number | null; stdout?: string }>) {
+function fakeRun(responses: Array<{ status: number | null | undefined; stdout?: string }>) {
   const calls: Call[] = []
   return {
     calls,
+    // Returns the status verbatim, including `undefined`, so a test can reproduce Bun's
+    // failed-spawn shape instead of being normalized away by the fixture.
     run(command: string, args: readonly string[], input?: string) {
       calls.push(input === undefined ? { command, args } : { command, args, input })
       const next = responses.shift() ?? { status: 0, stdout: "" }
-      return { status: next.status, stdout: next.stdout ?? "" }
+      return { status: next.status as number | null, stdout: next.stdout ?? "" }
     },
   }
 }
@@ -36,6 +38,22 @@ describe("native credential store selection", () => {
       env: { DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1000/bus" },
       run: present.run,
     })?.kind).toBe("linux-secret-service")
+  })
+
+  /**
+   * Bun's `spawnSync` reports ENOENT as `status: undefined`; Node uses `null`. A check
+   * written as `status !== null` therefore claims a missing binary exists and every
+   * command through the "native" store then fails with INTERNAL. Regression guard.
+   */
+  test("a spawn that never happened is never mistaken for an installed binary", () => {
+    for (const status of [null, undefined]) {
+      const fake = fakeRun([{ status: status as unknown as null }])
+      expect(createNativeCredentialStore({
+        platform: "linux",
+        env: { DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1000/bus" },
+        run: fake.run,
+      })).toBeNull()
+    }
   })
 
   test("Linux writes the credential through stdin, never argv", () => {
